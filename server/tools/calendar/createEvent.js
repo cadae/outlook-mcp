@@ -19,10 +19,45 @@ export async function createEventTool(authManager, args) {
       finalBodyType = styledBody.type;
     }
 
+    // Normalize start/end times to Graph API format
+    // Handle both string timestamps and object formats
+    function normalizeDateTime(dateTimeValue, defaultTimeZone = 'UTC') {
+      if (!dateTimeValue) return null;
+      
+      // If already in Graph API format, return as-is
+      if (typeof dateTimeValue === 'object' && dateTimeValue.dateTime) {
+        return dateTimeValue;
+      }
+      
+      // If it's a string (ISO 8601), parse and convert to UTC
+      if (typeof dateTimeValue === 'string') {
+        // Parse the ISO string - handles offsets like +11:00
+        const parsedDate = new Date(dateTimeValue);
+        if (isNaN(parsedDate.getTime())) {
+          throw new Error(`Invalid date format: ${dateTimeValue}`);
+        }
+        
+        // Convert to UTC ISO string for Graph API
+        return {
+          dateTime: parsedDate.toISOString().slice(0, 19), // Remove milliseconds and Z
+          timeZone: 'UTC'
+        };
+      }
+      
+      return null;
+    }
+
+    const normalizedStart = normalizeDateTime(start);
+    const normalizedEnd = normalizeDateTime(end);
+
+    if (!normalizedStart || !normalizedEnd) {
+      return createValidationError('start/end', 'Valid start and end date/times are required');
+    }
+
     const event = {
       subject,
-      start,
-      end,
+      start: normalizedStart,
+      end: normalizedEnd,
       body: {
         contentType: finalBodyType === 'html' ? 'HTML' : 'Text',
         content: finalBody,

@@ -9,15 +9,29 @@ export async function listEventsTool(authManager, args) {
     await authManager.ensureAuthenticated();
     const graphApiClient = authManager.getGraphApiClient();
 
-    const endpoint = calendar ? `/me/calendars/${calendar}/events` : '/me/events';
+    // Use calendarView endpoint which properly handles timezones and recurring events
+    // This is more reliable than /events with filter
+    const endpoint = calendar 
+      ? `/me/calendars/${calendar}/calendarView` 
+      : '/me/calendarView';
+    
     const options = {
-      select: 'subject,start,end,location,attendees,bodyPreview',
+      select: 'id,subject,start,end,location,attendees,bodyPreview,organizer,isAllDay,showAs,importance,sensitivity,categories,webLink',
       top: limit,
       orderby: 'start/dateTime',
     };
 
+    // calendarView requires startDateTime and endDateTime as query parameters
     if (startDateTime && endDateTime) {
-      options.filter = `start/dateTime ge '${startDateTime}' and end/dateTime le '${endDateTime}'`;
+      options.startDateTime = startDateTime;
+      options.endDateTime = endDateTime;
+    } else {
+      // Default to today if no dates specified
+      const today = new Date();
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      options.startDateTime = today.toISOString();
+      options.endDateTime = tomorrow.toISOString();
     }
 
     const result = await graphApiClient.makeRequest(endpoint, options);
@@ -30,6 +44,9 @@ export async function listEventsTool(authManager, args) {
       location: event.location?.displayName || 'No location',
       attendees: event.attendees?.map(a => a.emailAddress?.address) || [],
       preview: event.bodyPreview,
+      organizer: event.organizer?.emailAddress?.address || 'Unknown',
+      isAllDay: event.isAllDay,
+      webLink: event.webLink,
     }));
 
     return createSafeResponse({ events, count: events.length });
